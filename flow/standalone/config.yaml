@@ -1,0 +1,26 @@
+# LibreLane configuration for the native/standalone uart_iic_spi_bridge
+# macro. Run from a LibreLane nix-shell with:
+#   librelane flow/standalone/config.yaml
+
+DESIGN_NAME: uart_iic_spi_bridge
+
+VERILOG_FILES:
+  - dir::../../rtl/baud_gen.v
+  - dir::../../rtl/uart_rx.v
+  - dir::../../rtl/uart_tx.v
+  - dir::../../rtl/i2c_master.v
+  - dir::../../rtl/spi_master.v
+  - dir::../../rtl/cmd_engine.v
+  - dir::../../rtl/uart_iic_spi_bridge.v
+
+# Matches the RTL's default CLK_FREQ_HZ (11.0592 MHz, chosen so the
+# default 115200 baud UART divides evenly - see rtl/baud_gen.v).
+CLOCK_PERIOD: 90.0
+CLOCK_PORT: clk
+
+IO_PIN_ORDER_CFG: dir::pin_order.cfg
+
+pdk::sky130*:
+  FP_CORE_UTIL: 35
+  scl::sky130_fd_sc_hd:
+    CLOCK_PERIOD: 90.0

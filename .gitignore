@@ -1,0 +1,27 @@
+# Python / cocotb
+.venv/
+__pycache__/
+*.pyc
+tb/cocotb/sim_build/
+tb/cocotb/**/sim_build/
+.pytest_cache/
+
+# Simulation artifacts
+*.vcd
+*.fst
+*.vvp
+results.xml
+
+# LibreLane run outputs (large, regenerable)
+flow/**/runs/
+flow/**/*.log
+
+# PDK / Nix
+.ciel/
+.direnv/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
