@@ -9,6 +9,7 @@ OP_I2C_WRITE_READ = 0x12
 OP_SPI_XFER = 0x20
 OP_SET_CONFIG = 0x30
 OP_GET_STATUS = 0x31
+OP_SELF_TEST = 0x40
 
 # Status codes (device -> host)
 STATUS_ACK = 0x06
@@ -37,3 +38,9 @@ DEFAULT_MAX_PAYLOAD = 16
 # GET_ID (0x02) response
 DEVICE_VERSION = 0x01
 DEVICE_ID = 0xA5
+
+# SELF_TEST (0x40) response RDATA[0] flag bits, and the fixed byte it
+# shifts out on SPI CS0 (see docs/PROTOCOL.md)
+SELF_TEST_PATTERN = 0x5A
+SELF_TEST_I2C_BUS_IDLE = 0x01
+SELF_TEST_SPI_LOOPBACK = 0x02

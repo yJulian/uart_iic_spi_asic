@@ -5,7 +5,7 @@ slave model and an SPI slave model attached to the respective buses.
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge
+from cocotb.triggers import ClockCycles, Edge, FallingEdge
 
 from i2c_slave_model import I2cSlaveModel
 from spi_slave_model import SpiSlaveModel
@@ -23,6 +23,11 @@ OPC_I2C_WRITE_READ = 0x12
 OPC_SPI_XFER = 0x20
 OPC_SET_CONFIG = 0x30
 OPC_GET_STATUS = 0x31
+OPC_SELF_TEST = 0x40
+
+SELF_TEST_PATTERN = 0x5A
+SELF_TEST_I2C_BUS_IDLE = 0x01
+SELF_TEST_SPI_LOOPBACK = 0x02
 
 STAT_ACK = 0x06
 STAT_NACK = 0x15
@@ -240,6 +245,49 @@ async def test_spi_xfer(dut):
     assert status == STAT_ACK
     assert data == bytes([0x11, 0x22, 0x33])
     assert slave.rx_bytes == [0xAA, 0xBB, 0xCC]
+
+
+@cocotb.test()
+async def test_self_test_bus_ok_no_loopback(dut):
+    await start_clock(dut)
+    # spi_miso is held at its default 1 (start_clock) - no loopback jumper.
+
+    await uart_send_frame(dut, OPC_SELF_TEST)
+    status, data = await uart_recv_response(dut)
+    assert status == STAT_ACK
+    assert data[0] & SELF_TEST_I2C_BUS_IDLE
+    assert not (data[0] & SELF_TEST_SPI_LOOPBACK)
+    assert data[1] == 0xFF  # miso held high throughout the probe
+
+
+@cocotb.test()
+async def test_self_test_stuck_bus_reports_nack(dut):
+    await start_clock(dut)
+    dut.i2c_sda_in.value = 0  # simulate a stuck-low SDA (missing pull-up)
+
+    await uart_send_frame(dut, OPC_SELF_TEST)
+    status, data = await uart_recv_response(dut)
+    assert status == STAT_NACK
+    assert not (data[0] & SELF_TEST_I2C_BUS_IDLE)
+
+
+@cocotb.test()
+async def test_self_test_spi_loopback_detected(dut):
+    await start_clock(dut)
+
+    async def mirror_mosi_to_miso():
+        dut.spi_miso.value = dut.spi_mosi.value  # seed: Edge only fires on a change
+        while True:
+            await Edge(dut.spi_mosi)
+            dut.spi_miso.value = dut.spi_mosi.value
+
+    cocotb.start_soon(mirror_mosi_to_miso())
+
+    await uart_send_frame(dut, OPC_SELF_TEST)
+    status, data = await uart_recv_response(dut)
+    assert status == STAT_ACK
+    assert data[0] & SELF_TEST_SPI_LOOPBACK
+    assert data[1] == SELF_TEST_PATTERN
 
 
 def test_cmd_engine_runner():

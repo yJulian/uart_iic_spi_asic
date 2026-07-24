@@ -4,6 +4,7 @@ Examples::
 
     uart-iic-spi-bridge -p /dev/ttyUSB0 ping
     uart-iic-spi-bridge -p /dev/ttyUSB0 id
+    uart-iic-spi-bridge -p /dev/ttyUSB0 self-test
     uart-iic-spi-bridge -p /dev/ttyUSB0 i2c-scan
     uart-iic-spi-bridge -p /dev/ttyUSB0 i2c-write 0x50 00 ab
     uart-iic-spi-bridge -p /dev/ttyUSB0 i2c-read 0x50 4
@@ -79,6 +80,13 @@ def _cmd_spi_xfer(bridge: UartIicSpiBridge, args: argparse.Namespace) -> None:
     print(_hex(rdata))
 
 
+def _cmd_self_test(bridge: UartIicSpiBridge, args: argparse.Namespace) -> None:
+    result = bridge.self_test()
+    print(f"i2c_bus_idle={result.i2c_bus_idle} spi_loopback_ok={result.spi_loopback_ok} spi_echo=0x{result.spi_echo_byte:02x}")
+    if not result.i2c_bus_idle:
+        print("warning: I2C bus not idle after probe - stuck bus or missing pull-ups?", file=sys.stderr)
+
+
 def _cmd_config(bridge: UartIicSpiBridge, args: argparse.Namespace) -> None:
     if args.i2c_clkdiv is not None:
         bridge.set_i2c_clkdiv(args.i2c_clkdiv)
@@ -101,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("ping").set_defaults(func=_cmd_ping)
     sub.add_parser("id").set_defaults(func=_cmd_id)
+    sub.add_parser("self-test").set_defaults(func=_cmd_self_test)
     sub.add_parser("i2c-scan").set_defaults(func=_cmd_i2c_scan)
 
     p = sub.add_parser("i2c-write")

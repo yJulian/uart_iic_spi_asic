@@ -60,8 +60,10 @@ flowchart LR
   `i2c_master`/`spi_master` through the requested transaction via a
   small state machine, and sends the framed response back through
   `uart_tx`. Owns the runtime-configurable registers (I2C/SPI clock
-  dividers, SPI mode, CS polarity). See `docs/PROTOCOL.md` for the full
-  wire format.
+  dividers, SPI mode, CS polarity). Also owns `SELF_TEST` (`0x40`), a
+  built-in power-on self test that probes the I2C bus for a stuck
+  condition and the SPI bus for a loopback echo - see `docs/PROTOCOL.md`
+  for the full wire format.
 
 - **`rtl/uart_iic_spi_bridge.v`** - the native/standalone top level,
   wiring the modules above to a small, purpose-named pinout (see the
@@ -94,7 +96,11 @@ reusable sub-sequences rather than one state per opcode:
 4. **SPI execution** - a two-state loop (`ST_EX_SPI_ISSUE` /
    `ST_EX_SPI_WAIT`) issues one byte transfer at a time with `hold_cs`
    held until the last byte of the burst.
-5. **Response transmission** - a generic "send one byte, wait for
+5. **Self test** (`SELF_TEST`, `0x40`) - reuses the same I2C
+   START/STOP primitives (with no address byte, so nothing can NACK) to
+   wiggle the I2C lines and check they settle idle-high, then a single
+   SPI transfer of a fixed byte to see if it loops back on MISO.
+6. **Response transmission** - a generic "send one byte, wait for
    `uart_tx` to finish" sub-sequence is reused for the STATUS, RLEN,
    each payload byte, and the checksum.
 

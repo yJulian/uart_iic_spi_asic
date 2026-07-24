@@ -30,6 +30,12 @@ module cmd_engine #(
     input  wire          i2c_ack_error,
     output reg  [15:0]  i2c_clk_div,
 
+    // Raw I2C pad reads, sampled directly (not through i2c_master) so
+    // OPC_SELF_TEST can check bus health independently of any in-flight
+    // transaction.
+    input  wire          i2c_scl_in,
+    input  wire          i2c_sda_in,
+
     // SPI master control
     output reg                              spi_start,
     output reg [$clog2(NUM_SPI_CS)-1:0]     spi_cs_sel,
@@ -56,7 +62,8 @@ module cmd_engine #(
         OPC_I2C_WRITE_READ = 8'h12,
         OPC_SPI_XFER       = 8'h20,
         OPC_SET_CONFIG     = 8'h30,
-        OPC_GET_STATUS     = 8'h31;
+        OPC_GET_STATUS     = 8'h31,
+        OPC_SELF_TEST      = 8'h40;
 
     localparam [7:0]
         STAT_ACK           = 8'h06,
@@ -73,6 +80,12 @@ module cmd_engine #(
 
     localparam [7:0] DEVICE_VERSION = 8'h01;
     localparam [7:0] DEVICE_ID      = 8'hA5;
+
+    // OPC_SELF_TEST: known byte shifted out on SPI CS0 during the probe,
+    // and the RDATA[0] flag bits reported in the response.
+    localparam [7:0] SELF_TEST_PATTERN       = 8'h5A;
+    localparam [7:0] SELF_TEST_I2C_BUS_IDLE  = 8'b0000_0001;
+    localparam [7:0] SELF_TEST_SPI_LOOPBACK  = 8'b0000_0010;
 
     // ------------------------------------------------------------------
     // State encoding
@@ -99,7 +112,10 @@ module cmd_engine #(
         ST_TX_CKSUM          = 5'd18,
         ST_SEND_ISSUE        = 5'd19,
         ST_SEND_GAP          = 5'd20,
-        ST_SEND_WAIT         = 5'd21;
+        ST_SEND_WAIT         = 5'd21,
+        ST_EX_ST_I2C_START_DONE = 5'd22,
+        ST_EX_ST_I2C_STOP_DONE  = 5'd23,
+        ST_EX_ST_SPI_WAIT       = 5'd24;
 
     localparam [1:0]
         I2C_OP_START = 2'd0,
@@ -132,6 +148,8 @@ module cmd_engine #(
 
     reg  [1:0] i2c_op_sel;
     reg  [4:0] i2c_return_state;
+
+    reg        self_test_bus_ok;
 
     reg  [7:0] send_byte_data;
     reg  [4:0] send_return_state;
@@ -166,6 +184,7 @@ module cmd_engine #(
             wr_phase       <= 1'b0;
             i2c_op_sel     <= I2C_OP_START;
             i2c_return_state  <= ST_RX_OPCODE;
+            self_test_bus_ok  <= 1'b0;
             send_byte_data    <= 8'd0;
             send_return_state <= ST_RX_OPCODE;
 
@@ -368,6 +387,23 @@ module cmd_engine #(
                                 state    <= ST_TX_STATUS;
                             end
 
+                            OPC_SELF_TEST: begin
+                                if (len != 8'd0) begin
+                                    resp_status <= STAT_ERR_LEN;
+                                    resp_len    <= 8'd0;
+                                    state       <= ST_TX_STATUS;
+                                end else begin
+                                    // Bare START immediately followed by
+                                    // STOP: no address byte is sent, so
+                                    // there's nothing to NACK - this just
+                                    // exercises the I2C master's line
+                                    // drivers and leaves the bus idle.
+                                    i2c_op_sel <= I2C_OP_START;
+                                    i2c_return_state <= ST_EX_ST_I2C_START_DONE;
+                                    state <= ST_I2C_ISSUE;
+                                end
+                            end
+
                             default: begin
                                 resp_status <= STAT_ERR_OPCODE;
                                 resp_len    <= 8'd0;
@@ -503,6 +539,35 @@ module cmd_engine #(
                 end
 
                 ST_EX_I2C_STOP_DONE: state <= ST_TX_STATUS;
+
+                // ---------------- self test ----------------
+                ST_EX_ST_I2C_START_DONE: begin
+                    i2c_op_sel <= I2C_OP_STOP;
+                    i2c_return_state <= ST_EX_ST_I2C_STOP_DONE;
+                    state <= ST_I2C_ISSUE;
+                end
+
+                ST_EX_ST_I2C_STOP_DONE: begin
+                    // Bus should have settled idle-high by now if pull-ups
+                    // are present and nothing is stuck; sample it, then
+                    // probe SPI CS0 with a known byte (only echoes back
+                    // correctly if MOSI is externally jumpered to MISO).
+                    self_test_bus_ok <= i2c_scl_in & i2c_sda_in;
+                    spi_cs_sel  <= {$clog2(NUM_SPI_CS){1'b0}};
+                    spi_hold_cs <= 1'b0;
+                    spi_tx_data <= SELF_TEST_PATTERN;
+                    spi_start   <= 1'b1;
+                    state       <= ST_EX_ST_SPI_WAIT;
+                end
+
+                ST_EX_ST_SPI_WAIT: if (spi_done) begin
+                    resp_status <= self_test_bus_ok ? STAT_ACK : STAT_NACK;
+                    resp_len    <= 8'd2;
+                    tx_buf[0]   <= (self_test_bus_ok ? SELF_TEST_I2C_BUS_IDLE : 8'd0)
+                                 | ((spi_rx_data == SELF_TEST_PATTERN) ? SELF_TEST_SPI_LOOPBACK : 8'd0);
+                    tx_buf[1]   <= spi_rx_data;
+                    state       <= ST_TX_STATUS;
+                end
 
                 // ---------------- SPI transfer loop ----------------
                 ST_EX_SPI_ISSUE: begin

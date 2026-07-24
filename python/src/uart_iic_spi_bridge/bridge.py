@@ -6,6 +6,7 @@ on top of a plain 8N1 UART (via `pyserial <https://pyserial.readthedocs.io/>`_).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from . import constants as c
@@ -25,6 +26,24 @@ def _checksum(data: bytes) -> int:
     for b in data:
         cksum ^= b
     return cksum
+
+
+@dataclass
+class SelfTestResult:
+    """Result of `UartIicSpiBridge.self_test`."""
+
+    i2c_bus_idle: bool
+    spi_loopback_ok: bool
+    spi_echo_byte: int
+
+    @property
+    def passed(self) -> bool:
+        """Overall pass/fail, mirroring the device's ACK/NACK verdict.
+
+        Only `i2c_bus_idle` gates this - `spi_loopback_ok` is
+        informational, since most setups have no MOSI-MISO jumper.
+        """
+        return self.i2c_bus_idle
 
 
 class UartIicSpiBridge:
@@ -268,3 +287,30 @@ class UartIicSpiBridge:
         """Return the raw STATUS byte of the *previous* command."""
         rdata = self._transact(c.OP_GET_STATUS, expect_rlen=1)
         return rdata[0]
+
+    # ------------------------------------------------------------------
+    # 0x40 - self test
+    # ------------------------------------------------------------------
+
+    def self_test(self) -> SelfTestResult:
+        """Run the device's built-in power-on self test.
+
+        Probes the I2C bus with a bare START/STOP (no address byte, so
+        nothing can NACK) and checks it settles idle-high, then shifts a
+        known byte out on SPI CS0 to see if it loops back on MISO.
+
+        Unlike the other calls, this never raises `NackError` on a
+        failed check - the device's NACK (a stuck I2C bus) is folded
+        into the returned result's `i2c_bus_idle`/`passed` fields so
+        callers can inspect a failed self test without a try/except.
+        """
+        try:
+            rdata = self._transact(c.OP_SELF_TEST, expect_rlen=2)
+        except NackError as exc:
+            rdata = exc.rdata
+        flags, spi_echo = rdata[0], rdata[1]
+        return SelfTestResult(
+            i2c_bus_idle=bool(flags & c.SELF_TEST_I2C_BUS_IDLE),
+            spi_loopback_ok=bool(flags & c.SELF_TEST_SPI_LOOPBACK),
+            spi_echo_byte=spi_echo,
+        )

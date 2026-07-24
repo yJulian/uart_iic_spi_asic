@@ -107,6 +107,36 @@ No payload. Responds `ACK` with `RLEN = 1`, `RDATA[0]` holding the
 `STATUS` byte of the *previous* command (useful for polling after a
 command whose own response you didn't check, or just for a sanity check).
 
+### `0x40` SELF_TEST
+
+No payload. Runs a built-in power-on self test (POST) of the I2C and SPI
+hardware and reports back a diagnostic byte:
+
+1. Issues a bare I2C START immediately followed by STOP - no address byte
+   is sent, so there is nothing to NACK. This exercises the I2C master's
+   line drivers and leaves the bus idle.
+2. Samples `SCL`/`SDA` right after the STOP. On a healthy bus with
+   pull-ups populated and nothing stuck, both read high.
+3. Shifts the fixed byte `0x5A` out on SPI CS0 (using whatever
+   `SPI_CLKDIV`/`SPI_MODE` is currently configured) and captures whatever
+   comes back on MISO.
+
+Responds `RLEN = 2`, `RDATA = [FLAGS, SPI_ECHO]`:
+
+| `FLAGS` bit | Name | Meaning |
+|---|---|---|
+| `0` | `I2C_BUS_IDLE` | `SCL` and `SDA` both sampled high after the probe |
+| `1` | `SPI_LOOPBACK` | `SPI_ECHO == 0x5A` - only set if `MOSI` is externally jumpered to `MISO` on the test fixture |
+| `2-7` | *(reserved)* | always `0` |
+
+`SPI_ECHO` is the raw byte read back on MISO during the probe, reported
+regardless of whether it matched, for diagnostics.
+
+`STATUS` is `ACK` if `I2C_BUS_IDLE` is set, `NACK` otherwise (a stuck bus
+or missing pull-ups is the one condition this test can detect without any
+external jig). `SPI_LOOPBACK` never affects `STATUS` since most setups
+have no loopback jumper installed.
+
 ## Example: reading two registers from an I2C EEPROM at address 0x50
 
 Write the register pointer, then read back 2 bytes with a repeated START:

@@ -151,6 +151,9 @@ module uart_iic_spi_bridge #(
         .i2c_ack_error(i2c_ack_error),
         .i2c_clk_div  (i2c_clk_div),
 
+        .i2c_scl_in(i2c_scl_in),
+        .i2c_sda_in(i2c_sda_in),
+
         .spi_start      (spi_start_w),
         .spi_cs_sel     (spi_cs_sel_w),
         .spi_hold_cs    (spi_hold_cs_w),

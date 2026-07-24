@@ -4,7 +4,7 @@ See ``docs/PROTOCOL.md`` in the repository root for the wire protocol
 this package implements.
 """
 
-from .bridge import UartIicSpiBridge
+from .bridge import SelfTestResult, UartIicSpiBridge
 from .exceptions import (
     BridgeError,
     ChecksumRejected,
@@ -20,6 +20,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "UartIicSpiBridge",
+    "SelfTestResult",
     "BridgeError",
     "ProtocolError",
     "ResponseChecksumError",

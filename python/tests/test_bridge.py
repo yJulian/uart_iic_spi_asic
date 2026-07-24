@@ -204,6 +204,42 @@ def test_get_status():
     assert bridge.get_status() == c.STATUS_NACK
 
 
+def test_self_test_passes_when_bus_idle():
+    def responder(opcode, payload):
+        assert opcode == c.OP_SELF_TEST
+        assert payload == b""
+        flags = c.SELF_TEST_I2C_BUS_IDLE
+        return c.STATUS_ACK, bytes([flags, 0xFF])
+
+    bridge, _ = make_bridge(responder)
+    result = bridge.self_test()
+    assert result.i2c_bus_idle is True
+    assert result.spi_loopback_ok is False
+    assert result.spi_echo_byte == 0xFF
+    assert result.passed is True
+
+
+def test_self_test_reports_stuck_bus_without_raising():
+    def responder(opcode, payload):
+        return c.STATUS_NACK, bytes([0x00, 0xFF])
+
+    bridge, _ = make_bridge(responder)
+    result = bridge.self_test()  # must not raise
+    assert result.i2c_bus_idle is False
+    assert result.passed is False
+
+
+def test_self_test_detects_spi_loopback():
+    def responder(opcode, payload):
+        flags = c.SELF_TEST_I2C_BUS_IDLE | c.SELF_TEST_SPI_LOOPBACK
+        return c.STATUS_ACK, bytes([flags, c.SELF_TEST_PATTERN])
+
+    bridge, _ = make_bridge(responder)
+    result = bridge.self_test()
+    assert result.spi_loopback_ok is True
+    assert result.spi_echo_byte == c.SELF_TEST_PATTERN
+
+
 def test_i2c_address_out_of_range_rejected_locally():
     bridge, ser = make_bridge(lambda op, pl: (c.STATUS_ACK, b""))
     with pytest.raises(ValueError):
