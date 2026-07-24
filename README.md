@@ -45,6 +45,9 @@ Device to host: `| STATUS (1B) | RLEN (1B) | RDATA (RLEN bytes) | CHECKSUM (1B) 
 | `0x30` | `SET_CONFIG` | Runtime-configure I2C/SPI clock dividers, SPI mode, CS polarity |
 | `0x31` | `GET_STATUS` | Returns the status of the previous command |
 
+A Python host driver implementing this protocol lives in
+[`python/`](python/README.md).
+
 ## Architecture
 
 ```mermaid
@@ -104,6 +107,7 @@ uart_iic_spi_asic/
 ├── flow/tinytapeout/            LibreLane config for the TinyTapeout wrapper
 ├── docs/PROTOCOL.md             Full UART command protocol specification
 ├── docs/architecture.md         Module-by-module architecture notes
+├── python/                      Python host driver (pip install -e python/)
 └── scripts/setup_cocotb_venv.sh Creates the Python venv for cocotb
 ```
 
