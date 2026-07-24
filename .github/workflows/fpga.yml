@@ -1,0 +1,54 @@
+name: FPGA (Tang Nano 9K)
+
+# Build-only check for the Tang Nano 9K target: yosys synth_gowin ->
+# nextpnr-himbaechel -> gowin_pack, confirming the bitstream still packs
+# cleanly. Runs on every push/PR, mirroring the LibreLane synth-check job's
+# role for the ASIC flow. No hardware is available in CI, so fpga-load/
+# fpga-flash are not exercised here - see README.md for the manual
+# hardware bring-up steps.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fpga-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned oss-cad-suite release, matching the toolchain version used to
+  # develop/validate flow/tangnano9k/ locally.
+  OSS_CAD_SUITE_DATE: "2026-07-24"
+
+jobs:
+  fpga-build:
+    name: yosys + nextpnr-himbaechel + gowin_pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache oss-cad-suite
+        id: cache-oss-cad-suite
+        uses: actions/cache@v6
+        with:
+          path: /opt/oss-cad-suite
+          key: oss-cad-suite-${{ env.OSS_CAD_SUITE_DATE }}
+
+      - name: Install oss-cad-suite
+        if: steps.cache-oss-cad-suite.outputs.cache-hit != 'true'
+        run: |
+          date_nodash="${OSS_CAD_SUITE_DATE//-/}"
+          url="https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_SUITE_DATE}/oss-cad-suite-linux-x64-${date_nodash}.tgz"
+          curl -sL "$url" -o /tmp/oss-cad-suite.tgz
+          sudo mkdir -p /opt
+          sudo tar -xzf /tmp/oss-cad-suite.tgz -C /opt
+
+      - name: Build Tang Nano 9K bitstream
+        run: |
+          export PATH="/opt/oss-cad-suite/bin:$PATH"
+          make fpga-build

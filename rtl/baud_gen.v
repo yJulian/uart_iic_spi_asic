@@ -18,8 +18,11 @@ module baud_gen #(
     output reg  tick_x1
 );
 
-    localparam integer DIV_X16 = (CLK_FREQ_HZ / (BAUD * 16) < 1)
-                                  ? 1 : (CLK_FREQ_HZ / (BAUD * 16));
+    // Round to nearest instead of truncating, so non-exact clock/baud
+    // combinations (e.g. a 27 MHz FPGA oscillator at 115200 baud) get the
+    // smallest achievable error rather than being biased consistently high.
+    localparam integer RAW_DIV_X16 = (CLK_FREQ_HZ + (BAUD * 8)) / (BAUD * 16);
+    localparam integer DIV_X16     = (RAW_DIV_X16 < 1) ? 1 : RAW_DIV_X16;
     localparam integer CNT_W   = $clog2(DIV_X16 + 1);
 
     reg [CNT_W-1:0] cnt;

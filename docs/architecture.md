@@ -77,6 +77,15 @@ flowchart LR
   pin in both variants, so nothing is ever dangling and synthesis has no
   dead logic to optimize away in either flow. Used by `flow/tinytapeout/`.
 
+- **`rtl/tangnano9k_top.v`** - the same pin-mapping-only philosophy applied
+  to the [Sipeed Tang Nano 9K](https://wiki.sipeed.com/hardware/en/tang/Tang-Nano-9K/Nano-9K.html)
+  FPGA: maps the core onto the board's 27 MHz oscillator, reset button,
+  USB-UART bridge, header GPIOs (SPI/I2C), and onboard LEDs, and turns the
+  core's split `i2c_*_out`/`_oe` signals into real tri-state `inout` pins
+  (`assign i2c_scl = i2c_scl_oe ? 1'b0 : 1'bz;`) since an FPGA pin can
+  actually be driven open-drain, unlike the ASIC's pad-ring-level
+  `_out`/`_oe`/`_in` split. Used by `flow/tangnano9k/`.
+
 ## Command execution flow (cmd_engine)
 
 `cmd_engine` is a single synchronous state machine built from a few
@@ -122,3 +131,28 @@ reusable sub-sequences rather than one state per opcode:
 | `i2c_scl` | `uio[0]` | bidir (open-drain via `uio_out`/`uio_oe`/`uio_in`) |
 | `i2c_sda` | `uio[1]` | bidir (open-drain via `uio_out`/`uio_oe`/`uio_in`) |
 | *(unused)* | `uio[7:2]` | `uio_oe` held low |
+
+## Tang Nano 9K pin mapping
+
+| Core signal | Board pin | Direction |
+|---|---|---|
+| `clk` | 52 (27 MHz oscillator) | in |
+| `rst_n` | 4 (button, active-low) | in |
+| `uart_rx` | 18 | in |
+| `uart_tx` | 17 | out |
+| `spi_sclk` | 25 | out |
+| `spi_mosi` | 26 | out |
+| `spi_miso` | 27 | in |
+| `spi_cs_n[0]` | 28 | out |
+| `spi_cs_n[1]` | 29 | out |
+| `i2c_scl` | 30 | inout (open-drain) |
+| `i2c_sda` | 19 | inout (open-drain) |
+| heartbeat | `led[0]` (pin 10) | out, active-low |
+| `busy` | `led[1]` (pin 11) | out, active-low |
+| `error` | `led[2]` (pin 13) | out, active-low |
+| *(unused)* | `led[5:3]` (pins 14/15/16) | held off |
+
+Pin numbers were cross-checked against the official Sipeed
+`TangNano-9K-example` repo's constraint files and the board's schematic;
+see `flow/tangnano9k/tangnano9k.cst` for the full constraints including
+I/O standard and pull-up/drive settings.

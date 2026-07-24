@@ -16,6 +16,9 @@ results.xml
 flow/**/runs/
 flow/**/*.log
 
+# FPGA flow outputs (large, regenerable)
+flow/tangnano9k/build/
+
 # PDK / Nix
 .ciel/
 .direnv/

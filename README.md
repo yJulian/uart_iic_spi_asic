@@ -1,6 +1,7 @@
 # UART-to-I2C/SPI Bridge ASIC
 
 [![LibreLane](https://github.com/yJulian/uart_iic_spi_asic/actions/workflows/librelane.yml/badge.svg)](https://github.com/yJulian/uart_iic_spi_asic/actions/workflows/librelane.yml)
+[![FPGA](https://github.com/yJulian/uart_iic_spi_asic/actions/workflows/fpga.yml/badge.svg)](https://github.com/yJulian/uart_iic_spi_asic/actions/workflows/fpga.yml)
 
 An open-source digital ASIC that receives framed commands over UART and,
 depending on the command, drives an I2C or SPI peripheral bus. It is
@@ -107,6 +108,7 @@ uart_iic_spi_asic/
 ├── tb/cocotb/                   cocotb testbenches + hand-rolled I2C/SPI bus models
 ├── flow/standalone/             LibreLane config for the native pinout
 ├── flow/tinytapeout/            LibreLane config for the TinyTapeout wrapper
+├── flow/tangnano9k/             oss-cad-suite/Gowin flow for the Tang Nano 9K FPGA target
 ├── docs/PROTOCOL.md             Full UART command protocol specification
 ├── docs/architecture.md         Module-by-module architecture notes
 ├── python/                      Python host driver (pip install -e python/)
@@ -198,6 +200,61 @@ View the resulting layout in KLayout or the OpenROAD GUI:
   but those advisories are the first thing to address before this would
   be considered truly signoff-ready for fabrication (e.g. by tightening
   `MAX_FANOUT_CONSTRAINT`/buffering in the flow config).
+
+## FPGA target: Tang Nano 9K
+
+Alongside the sky130 ASIC flow, the same core (`uart_iic_spi_bridge`) is
+also brought up on the [Sipeed Tang Nano 9K](https://wiki.sipeed.com/hardware/en/tang/Tang-Nano-9K/Nano-9K.html)
+(`GW1NR-LV9QN88PC6/I5`) using the fully open
+[oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build) toolchain:
+`yosys` (`synth_gowin`) for synthesis, `nextpnr-himbaechel` (Gowin uarch)
+for place-and-route, and apycula's `gowin_pack` to produce the `.fs`
+bitstream, flashed with [`openFPGALoader`](https://github.com/trabucayre/openFPGALoader).
+No RTL changes were needed beyond a new top-level pin-mapping wrapper
+(`rtl/tangnano9k_top.v`, same "no added logic" philosophy as the
+TinyTapeout wrapper) and a small `baud_gen.v` rounding fix (round-to-
+nearest instead of floor for the 16x tick divisor - a no-op at the ASIC's
+11.0592 MHz clock, but keeps the baud error under ~2.3% at the board's
+27 MHz oscillator instead of ~4.6%).
+
+### Prerequisites
+
+- [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build) with its
+  `bin/` on `PATH` (provides `yosys`, `nextpnr-himbaechel`, `gowin_pack`,
+  `openFPGALoader`).
+- A Tang Nano 9K connected over USB.
+
+### Pinout
+
+| Signal | Pin | Notes |
+|---|---|---|
+| `clk` | 52 | onboard 27 MHz oscillator |
+| `rst_n` | 4 | onboard button (active-low) |
+| `uart_rx` / `uart_tx` | 18 / 17 | onboard USB-UART bridge |
+| `spi_sclk` / `spi_mosi` / `spi_miso` | 25 / 26 / 27 | header pins |
+| `spi_cs_n[0]` / `spi_cs_n[1]` | 28 / 29 | header pins |
+| `i2c_scl` / `i2c_sda` | 30 / 19 | header pins, open-drain + internal pull-up (add external ~4.7k pull-ups for a real multi-device bus) |
+| `led[5:0]` | 16/15/14/13/11/10 | onboard LEDs, active-low; `led[0]`=heartbeat, `led[1]`=busy, `led[2]`=error |
+
+See [`flow/tangnano9k/tangnano9k.cst`](flow/tangnano9k/tangnano9k.cst) for
+the full physical constraints and
+[`docs/architecture.md`](docs/architecture.md#tang-nano-9k-pin-mapping) for
+the wrapper description.
+
+### Build, load, and flash
+
+```console
+$ export PATH=/opt/oss-cad-suite/bin:$PATH   # or source its environment script
+
+$ make fpga-build   # yosys -> nextpnr-himbaechel -> gowin_pack
+$ make fpga-load    # load to SRAM over JTAG/UART-JTAG - volatile, for quick iteration
+$ make fpga-flash   # write to onboard SPI flash - persists across power cycles
+```
+
+Sanity-check a freshly loaded board with the Python host driver over the
+board's USB-serial port at 115200 8N1, e.g.
+`python/examples/ping_and_id.py`, and confirm `led[0]` is blinking
+(heartbeat) before moving from `fpga-load` to `fpga-flash`.
 
 ## Known limitations / future work
 
