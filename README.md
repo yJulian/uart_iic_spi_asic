@@ -1,5 +1,7 @@
 # UART-to-I2C/SPI Bridge ASIC
 
+[![LibreLane](https://github.com/yJulian/uart_iic_spi_asic/actions/workflows/librelane.yml/badge.svg)](https://github.com/yJulian/uart_iic_spi_asic/actions/workflows/librelane.yml)
+
 An open-source digital ASIC that receives framed commands over UART and,
 depending on the command, drives an I2C or SPI peripheral bus. It is
 built entirely with open tooling: RTL in Verilog, verification with

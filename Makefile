@@ -8,7 +8,7 @@ VENV       := .venv
 PY         := $(VENV)/bin/python3
 PDK_ROOT   ?= $(HOME)/.ciel
 
-.PHONY: sim-setup sim lint synth-check flow-standalone flow-tinytapeout clean
+.PHONY: sim-setup sim lint synth-check synth-check-standalone synth-check-tinytapeout flow-standalone flow-tinytapeout clean
 
 sim-setup:
 	scripts/setup_cocotb_venv.sh
@@ -23,8 +23,13 @@ lint:
 	iverilog -g2012 -Wall -o /dev/null -s uart_iic_spi_bridge rtl/*.v
 	iverilog -g2012 -Wall -o /dev/null -s tt_um_uart_iic_spi_bridge rtl/*.v
 
-synth-check:
+synth-check: synth-check-standalone synth-check-tinytapeout
+
+synth-check-standalone:
 	PDK_ROOT=$(PDK_ROOT) librelane --pdk-root $(PDK_ROOT) --only Yosys.Synthesis flow/standalone/config.yaml
+
+synth-check-tinytapeout:
+	PDK_ROOT=$(PDK_ROOT) librelane --pdk-root $(PDK_ROOT) --only Yosys.Synthesis flow/tinytapeout/config.yaml
 
 flow-standalone:
 	PDK_ROOT=$(PDK_ROOT) librelane --pdk-root $(PDK_ROOT) flow/standalone/config.yaml

@@ -1,0 +1,117 @@
+name: LibreLane
+
+# RTL sanity check on every push/PR, a fast synthesis-only LibreLane check
+# on every push/PR, and the full LibreLane Classic flow (place-and-route
+# through GDSII with DRC/LVS/STA signoff) on pushes to main or manual
+# dispatch, since the full flow is far too slow/heavy to run on every PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: librelane-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned to the LibreLane 3.0.5 release tag by commit, matching the
+  # librelane_version recorded in this repo's local flow runs.
+  LIBRELANE_ARCHIVE_URL: https://github.com/librelane/librelane/archive/bf87321d2f6099414424a641b10af308ecb01df5.tar.gz
+  # sky130A PDK (open_pdks) build enabled via `ciel`, matching this repo's
+  # local flow runs. Bump this together with LIBRELANE_ARCHIVE_URL.
+  SKY130_PDK_VERSION: 8afc8346a57fe1ab7934ba5a6056ea8b43078e71
+
+jobs:
+  lint:
+    name: RTL lint (iverilog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install iverilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - run: make lint
+
+  synth-check:
+    name: LibreLane synthesis check
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            extra-substituters = https://nix-cache.fossi-foundation.org
+            extra-trusted-public-keys = nix-cache.fossi-foundation.org:3+K59iFwXqKsL7BNu6Guy0v+uTlwsxYQxjspXzqLYQs=
+
+      - name: Cache sky130 PDK
+        uses: actions/cache@v6
+        with:
+          path: ~/.ciel
+          key: sky130-pdk-${{ env.SKY130_PDK_VERSION }}
+
+      - name: Fetch sky130 PDK (ciel)
+        run: |
+          nix-shell --extra-experimental-features 'nix-command flakes' "$LIBRELANE_ARCHIVE_URL" \
+            --run "ciel enable --pdk-family sky130 $SKY130_PDK_VERSION"
+
+      - name: Run Yosys synthesis for both top levels
+        run: |
+          nix-shell --extra-experimental-features 'nix-command flakes' "$LIBRELANE_ARCHIVE_URL" \
+            --run "make synth-check"
+
+  flow:
+    name: LibreLane full flow (${{ matrix.variant }})
+    needs: synth-check
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [standalone, tinytapeout]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            extra-substituters = https://nix-cache.fossi-foundation.org
+            extra-trusted-public-keys = nix-cache.fossi-foundation.org:3+K59iFwXqKsL7BNu6Guy0v+uTlwsxYQxjspXzqLYQs=
+
+      - name: Cache sky130 PDK
+        uses: actions/cache@v6
+        with:
+          path: ~/.ciel
+          key: sky130-pdk-${{ env.SKY130_PDK_VERSION }}
+
+      - name: Fetch sky130 PDK (ciel)
+        run: |
+          nix-shell --extra-experimental-features 'nix-command flakes' "$LIBRELANE_ARCHIVE_URL" \
+            --run "ciel enable --pdk-family sky130 $SKY130_PDK_VERSION"
+
+      - name: Run full flow (${{ matrix.variant }})
+        run: |
+          nix-shell --extra-experimental-features 'nix-command flakes' "$LIBRELANE_ARCHIVE_URL" \
+            --run "make flow-${{ matrix.variant }}"
+
+      - name: Upload signoff artifacts (${{ matrix.variant }})
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: librelane-${{ matrix.variant }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            flow/${{ matrix.variant }}/runs/*/final/**
+            flow/${{ matrix.variant }}/runs/*/*.log
+            flow/${{ matrix.variant }}/runs/*/resolved.json
+          if-no-files-found: warn
+          retention-days: 14
